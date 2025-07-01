@@ -7,7 +7,7 @@ import os
 # Load the saved model
 @st.cache_resource
 def load_trained_model():
-    return load_model("favour/best_model.h5")  # Adjust path if needed
+    return load_model("best_model.h5")  # Adjust path if needed
 
 model = load_trained_model()
 
