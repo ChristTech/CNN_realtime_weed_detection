@@ -1,3 +1,4 @@
+from kivymd.icon_definitions import md_icons
 from kivy.lang import Builder
 from kivymd.app import MDApp
 from kivymd.uix.screen import MDScreen
@@ -6,6 +7,9 @@ from kivymd.uix.label import MDLabel
 from kivy.uix.filechooser import FileChooserIconView
 from kivy.uix.popup import Popup
 from kivy.uix.image import Image as KivyImage
+from kivy.core.window import Window
+from kivy.uix.image import Image
+from kivy.uix.modalview import ModalView
 import os
 import cv2
 import numpy as np
@@ -14,8 +18,21 @@ from kivy.clock import Clock
 from kivy.graphics.texture import Texture
 from utils.tflite_predictor import WeedDetector
 from kivymd.uix.fitimage import FitImage
+from kivy.utils import platform  # Import platform
+import sys
+
+# Add splash screen handling at the start of your file
+if getattr(sys, 'frozen', False):
+    import pyi_splash
+    # Add custom loading messages
+    pyi_splash.update_text("Loading weed detector...")
+    pyi_splash.update_text("Initializing camera...")
+    pyi_splash.update_text("Loading AI model...")
+    pyi_splash.update_text("Starting application...")
 
 KV = '''
+#:import images_path kivymd.images_path
+
 MDScreen:
     MDBoxLayout:
         orientation: 'vertical'
@@ -52,12 +69,6 @@ MDScreen:
                         on_release: 
                             app.start_camera_detection()
 
-                        # MDButtonText:
-                        #     text: 'Open Camera'
-
-                        # MDButtonIcon:
-                        #     icon: 'camera'
-
                     MDButton:
                         pos_hint: {'center_x': 0.5}
                         on_release: app.pick_video_file()
@@ -80,29 +91,73 @@ MDScreen:
                             icon: 'file'
 '''
 
-class WeedDetectionApp(MDApp):
+if platform == 'android':
+    from android.permissions import request_permissions, Permission
+    def request_android_permissions():
+        request_permissions([Permission.CAMERA, Permission.READ_EXTERNAL_STORAGE,
+                             Permission.WRITE_EXTERNAL_STORAGE])
+else:
+    def request_android_permissions():
+        pass
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+
+class FavourBroadLeafDetectorApp(MDApp):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.camera_active = False
-
+        
     def build(self):
-        self.title = "Weed Detector"
-        self.detector = WeedDetector("assets/weed_detector.tflite")  # Update with actual path
+        # Close splash screen if running as frozen app
+        if getattr(sys, 'frozen', False):
+            pyi_splash.update_text("Kwara State University CSC499\nWeed Detection System")
+            # Add a small delay to show the final message
+            Clock.schedule_once(lambda dt: pyi_splash.close(), 2)
+            
+        self.icon = resource_path('assets/icon.ico')
+        request_android_permissions()
+        self.title = "Favors CNN Weed Detector"
+        model_path = resource_path("assets/weed_detector.tflite")
+        self.detector = WeedDetector(model_path)
         self.interpreter = self.detector.interpreter
         self.input_details = self.detector.input_details
         self.output_details = self.detector.output_details
         self.labels = self.detector.classes
+        # Set app icon
+        self.icon = resource_path('assets/icon.ico')
         return Builder.load_string(KV)
 
+    def close_splash(self, *args):
+        self.splash.dismiss()
+
     def start_camera_detection(self):
-        if not self.camera_active:
-            # Initialize the webcam feed
-            self.capture = cv2.VideoCapture(0)  # Start webcam (use 1 or 2 for external cams)
-            self.camera_active = True
-            Clock.schedule_interval(self.update_camera, 1.0 / 30.0)  # 30 FPS
-            self.root.ids.start_camera_button.icon = 'stop'
-        else:
-            self.stop_camera_detection()
+        if not self.check_opencv_config():
+            self.show_error_popup("OpenCV Error", 
+                "OpenCV configuration files missing. Please check installation.")
+            return
+        
+        try:
+            if not self.camera_active:
+                self.capture = cv2.VideoCapture(0)
+                if not self.capture.isOpened():
+                    self.show_error_popup("Camera Error", 
+                        "Could not access the camera. Please check your camera connection.")
+                    return
+                self.camera_active = True
+                Clock.schedule_interval(self.update_camera, 1.0 / 30.0)
+                self.root.ids.start_camera_button.icon = 'stop'
+            else:
+                self.stop_camera_detection()
+        except Exception as e:
+            self.show_error_popup("Camera Error", f"Error accessing camera: {str(e)}")
 
     def stop_camera_detection(self):
         if self.camera_active:
@@ -168,7 +223,7 @@ class WeedDetectionApp(MDApp):
                 cap.release()
                 out.release()
                 print("Detection completed. Annotated video saved as 'annotated_output.mp4'")
-                Clock.unschedule(process_frame)  # Stop scheduling when video ends
+                Clock.unschedule(process_frame)
                 return
 
             # Same detection logic as for camera
@@ -183,12 +238,32 @@ class WeedDetectionApp(MDApp):
             predicted_index = np.argmax(output_data[0])
             predicted_label = self.labels[predicted_index]
 
+            # Modified text parameters
+            font_scale = 3.0  # Increased from 1.0
+            thickness = 4     # Increased from 2
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            
+            # Get text size to better position it
+            (text_width, text_height), baseline = cv2.getTextSize(
+                predicted_label, font, font_scale, thickness
+            )
+            
             # Calculate position dynamically
             frame_height, frame_width, _ = frame.shape
-            text_x = int(frame_width / 2)  # Center horizontally
-            text_y = int(frame_height / 2) # Center vertically
+            text_x = int((frame_width - text_width) / 2)  # Center horizontally
+            text_y = int((frame_height + text_height) / 2)  # Center vertically
 
-            cv2.putText(frame, predicted_label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+            # Draw text with larger size
+            cv2.putText(
+                frame, 
+                predicted_label, 
+                (text_x, text_y), 
+                font, 
+                font_scale,
+                (255, 0, 0),  # Blue color
+                thickness,
+                cv2.LINE_AA  # Anti-aliased line for better quality
+            )
             out.write(frame)
 
             # Flip the frame vertically (to match Kivy's coordinate system)
@@ -215,4 +290,32 @@ class WeedDetectionApp(MDApp):
         # Placeholder for logs feature
         print("📜 Logs feature will be added soon...")
 
-WeedDetectionApp().run()
+    def show_error_popup(self, title, message):
+        popup = Popup(
+            title=title,
+            content=MDLabel(text=message),
+            size_hint=(0.8, 0.4)
+        )
+        popup.open()
+
+    def on_stop(self):
+        """Clean up resources when the application exits"""
+        if hasattr(self, 'capture') and self.capture is not None:
+            self.capture.release()
+        if hasattr(self, 'interpreter'):
+            del self.interpreter
+        cv2.destroyAllWindows()
+
+    def check_opencv_config(self):
+        """Check if OpenCV is properly configured"""
+        try:
+            # Try to get the first camera
+            temp_cap = cv2.VideoCapture(0)
+            if temp_cap is None or not temp_cap.isOpened():
+                return False
+            temp_cap.release()
+            return True
+        except Exception:
+            return False
+
+FavourBroadLeafDetectorApp().run()
