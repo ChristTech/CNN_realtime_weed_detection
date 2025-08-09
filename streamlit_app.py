@@ -15,9 +15,13 @@ st.set_page_config(page_title="🌱 Favors CNN Weed Detector",
 
 # --- Cache model load ---
 @st.cache_resource
+
 def load_model():
-    model_path = os.path.join("assets", "weed_detector.tflite")
+    model_path = os.path.join(os.path.dirname(__file__), "assets", "weed_detector.tflite")
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model not found at {model_path}")
     return WeedDetector(model_path)
+
 
 detector = load_model()
 interpreter = detector.interpreter

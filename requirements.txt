@@ -5,4 +5,4 @@ numpy
 pandas
 opencv-python-headless
 matplotlib
-tflite_runtime
+tflite-runtime==2.14.0
