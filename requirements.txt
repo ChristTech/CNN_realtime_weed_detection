@@ -1,8 +1,6 @@
 streamlit
-tensorflow
-pillow
+opencv-python-headless==4.8.0.76
 numpy
-pandas
-opencv-python-headless
 matplotlib
-tflite-runtime==2.14.0
+tensorflow==2.14.0
+pillow
