@@ -9,7 +9,7 @@ import os
 from utils.tflite_predictor import WeedDetector
 
 # --- Page config ---
-st.set_page_config(page_title="🌱 Favors CNN Weed Detector", 
+st.set_page_config(page_title="🌱 CNN Weed Detector", 
                    layout="wide",
                    page_icon="assets/icon.ico")
 
